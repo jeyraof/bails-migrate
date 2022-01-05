@@ -1,0 +1,42 @@
+#!/bin/bash
+set -e
+SCRIPTS_PATH="$(dirname $0)"
+MIGRATES_PATH="${SCRIPTS_PATH}/migrates"
+
+# DATABASE ENVS
+[[ -z "${DATABASE_HOST}" ]] && (echo "[E] Environment variable \`DATABASE_HOST\` must be set!" && exit 1) || DATABASE_HOST=${DATABASE_HOST}
+[[ -z "${DATABASE_NAME}" ]] && (echo "[E] Environment variable \`DATABASE_NAME\` must be set!" && exit 1) || DATABASE_NAME=${DATABASE_NAME}
+[[ -z "${DATABASE_USERNAME}" ]] && (echo "[E] Environment variable\`DATABASE_USERNAME\` must be set!" && exit 1) ||  DATABASE_USERNAME=${DATABASE_USERNAME}
+[[ -z "${DATABASE_PASSWORD}" ]] && (echo "[E] Environment variable \`DATABASE_PASSWORD\` must be set!" && exit 1) || DATABASE_PASSWORD=${DATABASE_PASSWORD}
+
+# Check database is exists
+DATABASE_EXISTS=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s -e "SHOW DATABASES LIKE '${DATABASE_NAME}'"`
+if [ "${DATABASE_EXISTS}" != "${DATABASE_NAME}" ]; then
+    echo -n "[I] Database \`${DATABASE_NAME}\` not found. Creating... "
+    DATABASE_CREATED=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s -e "CREATE DATABASE ${DATABASE_NAME}; SHOW DATABASES LIKE '${DATABASE_NAME}'"`
+
+    if [ "${DATABASE_CREATED}" != "${DATABASE_NAME}" ]; then
+        echo "Failed!"
+        echo "[E] Failed to create database \`${DATABASE_NAME}\`."
+        exit 1
+    fi
+    echo "Done!"
+fi
+
+# Check schema_migrations table is exists
+SCHEMA_MIGRATION_TABLE="schema_migrations"
+SCHEMA_MIGRATION_EXISTS=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s ${DATABASE_NAME} -e "SHOW TABLES LIKE '${SCHEMA_MIGRATION_TABLE}'"`
+if [ "${SCHEMA_MIGRATION_EXISTS}" != "${SCHEMA_MIGRATION_TABLE}" ]; then
+    echo -n "[I] Migration is not initialized yet. Initializing... "
+    mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s ${DATABASE_NAME} < "${SCRIPTS_PATH}/schema_migrations.sql"
+    SCHEMA_MIGRATION_CREATED=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s ${DATABASE_NAME} -e "SHOW TABLES LIKE '${SCHEMA_MIGRATION_TABLE}'"`
+
+    if [ "${SCHEMA_MIGRATION_CREATED}" != "${SCHEMA_MIGRATION_TABLE}" ]; then
+        echo "Failed!"
+        echo "[E] Failed to initialize migration."
+        exit 1
+    fi
+    echo "Done!"
+fi
+
+echo "Successfully initialized!"

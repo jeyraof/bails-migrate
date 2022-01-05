@@ -1,0 +1,56 @@
+#!/bin/bash
+set -e
+SCRIPTS_PATH="$(dirname $0)"
+MIGRATES_PATH="${SCRIPTS_PATH}/migrates"
+
+# DATABASE ENVS
+[[ -z "${DATABASE_HOST}" ]] && (echo "[E] Environment variable \`DATABASE_HOST\` must be set!" && exit 1) || DATABASE_HOST=${DATABASE_HOST}
+[[ -z "${DATABASE_NAME}" ]] && (echo "[E] Environment variable \`DATABASE_NAME\` must be set!" && exit 1) || DATABASE_NAME=${DATABASE_NAME}
+[[ -z "${DATABASE_USERNAME}" ]] && (echo "[E] Environment variable\`DATABASE_USERNAME\` must be set!" && exit 1) ||  DATABASE_USERNAME=${DATABASE_USERNAME}
+[[ -z "${DATABASE_PASSWORD}" ]] && (echo "[E] Environment variable \`DATABASE_PASSWORD\` must be set!" && exit 1) || DATABASE_PASSWORD=${DATABASE_PASSWORD}
+
+# Check database is exists
+DATABASE_EXISTS=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s -e "SHOW DATABASES LIKE '${DATABASE_NAME}'"`
+if [ "${DATABASE_EXISTS}" != "${DATABASE_NAME}" ]; then
+    echo "[E] Database \`${DATABASE_NAME}\` not found. Initialize first!"
+    echo
+    echo " - ${SCRIPTS_PATH}/init_migration"
+    echo
+    exit 1
+fi
+
+# Check schema_migrations table is exists
+SCHEMA_MIGRATION_TABLE="schema_migrations"
+SCHEMA_MIGRATION_EXISTS=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s ${DATABASE_NAME} -e "SHOW TABLES LIKE '${SCHEMA_MIGRATION_TABLE}'"`
+if [ "${SCHEMA_MIGRATION_EXISTS}" != "${SCHEMA_MIGRATION_TABLE}" ]; then
+    echo "[E] Migration is not initialized yet. Initialize first!"
+    echo
+    echo " - ${SCRIPTS_PATH}/init_migration"
+    echo
+    exit 1
+fi
+
+# Get migrated versions
+MIGRATED_VERSIONS=`mysql -h${DATABASE_HOST} -u${DATABASE_USERNAME} --password=${DATABASE_PASSWORD} -s ${DATABASE_NAME} -e "SELECT version FROM ${SCHEMA_MIGRATION_TABLE} ORDER BY version" | tr '\n' ' '`
+
+# Get local migrations
+LOCAL_MIGRATIONS=`ls -1 ${MIGRATES_PATH}/*.sql | xargs -n 1 basename`
+
+# Compare & Notify
+echo "Migration status:"
+echo
+MATCHER="([0-9]{14})_[a-z_]*.sql"
+for LOCAL_MIGRATION in ${LOCAL_MIGRATIONS}
+do
+    if [[ ${LOCAL_MIGRATION} =~ ${MATCHER} ]]; then
+        TARGET=${BASH_REMATCH[1]}
+    else
+        continue
+    fi
+
+    if [[ " ${MIGRATED_VERSIONS[*]} " =~ " ${TARGET} " ]]; then
+        echo " - [+] ${LOCAL_MIGRATION}"
+    else
+        echo " - [ ] ${LOCAL_MIGRATION}"
+    fi
+done
